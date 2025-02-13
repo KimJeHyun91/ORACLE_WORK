@@ -1,0 +1,346 @@
+-- TRIGGER
+-- 내가 지정한 테이블에 INSERT, UPDATE, DELETE 등의 DML문에 의해 이벤트(변경사항)가 발생했을 때 자동으로 매번 실행할 내용을 미리 정의해 둘 수 있는 객체
+-- 예) 회원이 회원탈퇴시 회원정보를 탈퇴한 회원만 보관하는 테이블에 저장후 기존 테이블의 회원정보를 삭제할 떄
+-- 예) 신고횟수가 일정 수를 넣었을 때 해당 회원을 블랙리스트로 처리
+-- 예) 입출고가 발생 했을 때 재고 수량을 매번 UPDATE를 해야 될 때
+--
+-- TRIGGER의 종류
+-- 1. SQL문의 실행시기에 따른 분류
+--      1) BEFORE TRIGGER : 명시한 테이블에 이벤트가 발생되기 전에 트리거 실행
+--      2) AFTER TRIGGER : 명시한 테이블에 이벤트가 발생된 후에 트리거 실행
+-- 2. SQL문에 의해 영향을 받는 각 행에 따른 분류
+--      1) STATEMENT TRIGGER (문장 TRIGGER) : 이벤트가 발생하면 딱 한번만 트리거를 실행
+--      2) ROW TRIGGER (행 TRIGGER) : 이벤트가 발생할 때 마다 트리거를 실행
+--          - 주의사항 : FOR EACH ROW 옵션을 기술해야됨
+--          - :OLD : 기존컬럼에 들어있던 데이터
+--          - :NEW : 새로 들어온 데이터
+--
+-- TRIGGER 생성 구문
+-- CREATE [OR REPLACE) TRIGGER 트리거명
+-- BEFORE|AFTER INSERT|UPDATE|DELETE ON 테이블명
+-- [FOR EACH ROW]
+-- [DECLARE
+--      변수 선언;
+-- BEGIN
+--      실행내용(위의 지정된 이벤트 벌생 시 자동으로 실행할 구문)
+-- [EXCEPTION
+--      예외처리구문;]
+-- END;
+-- /
+--
+-- TRIGGER 삭제
+-- DROP TRIGGER 트리거명
+SET SERVEROUTPUT ON;
+CREATE OR REPLACE TRIGGER
+    TRIGGER_01
+AFTER INSERT ON
+    EMPLOYEE
+BEGIN
+    DBMS_OUTPUT.PUT_LINE ('환영합니다.');
+END;
+/
+INSERT INTO
+    EMPLOYEE (
+        EMP_ID
+        , EMP_NAME
+        , EMP_NO
+        , JOB_CODE
+)
+VALUES (
+    '700'
+    , '강아지'
+    , '927533-1253555'
+    , 'J3'
+);
+
+CREATE TABLE
+    PRODUCT (
+        PRODUCT_CODE NUMBER PRIMARY KEY
+        , PRODUCT_NAME VARCHAR (30) NOT NULL
+        , PRODUCT_BRAND VARCHAR (30) NOT NULL
+        , STOCK_QUANT NUMBER DEFAULT 0
+);
+
+CREATE SEQUENCE 
+    SEQUENCE_PRODUCT_NUMBER
+NOCACHE
+START WITH 200;
+
+INSERT INTO
+    PRODUCT
+VALUES (
+    SEQUENCE_PRODUCT_NUMBER.NEXTVAL
+    , 'S25'
+    , 'SAMSUNG'
+    , DEFAULT
+);
+
+INSERT INTO
+    PRODUCT
+VALUES (
+    SEQUENCE_PRODUCT_NUMBER.NEXTVAL
+    , 'IPHONE 17'
+    , 'APPLE'
+    , DEFAULT
+);
+
+CREATE TABLE
+    PRODUCT_STOCK (
+    STOCK_CODE NUMBER PRIMARY KEY
+    , PRODUCT_CODE REFERENCES PRODUCT
+    , STOCK_DATE DATE
+    , STOCK_COUNT NUMBER NOT NULL
+    , STOCK_PRICE NUMBER NOT NULL
+);
+
+CREATE SEQUENCE 
+    STOCK_SEQUENCE
+NOCACHE;
+
+INSERT INTO
+    PRODUCT_STOCK
+VALUES (
+    STOCK_SEQUENCE.NEXTVAL, 201, SYSDATE, 10, 3000000);
+
+UPDATE 
+    PRODUCT
+SET 
+    STOCK_QUANT = STOCK_QUANT + 10
+WHERE
+    PRODUCT_CODE = 201;
+
+CREATE TABLE 
+    PRODUCT_SALE (
+    SALE_CODE NUMBER PRIMARY KEY
+    , PRODUCT_CODE NUMBER REFERENCES PRODUCT
+    , SALE_DATE DATE
+    , SALE_COUNT NUMBER NOT NULL
+    , SALE_PRICE NUMBER NOT NULL
+);
+
+CREATE SEQUENCE
+    SEQUENCE_SALE
+NOCACHE;
+
+INSERT INTO
+    PRODUCT_SALE
+VALUES (
+    SEQUENCE_SALE.NEXTVAL
+    , 201
+    , SYSDDATE
+    , 5
+    , 3500000
+);
+
+UPDATE 
+    PRODUCT
+SET 
+    STOCK_QUANT = STOCK_QUANT - 5
+WHERE
+    PRODUCT_CODE = 201;
+
+
+CREATE OR REPLACE TRIGGER
+    TRIGGER_CHANGE_NUMBER
+AFTER INSERT ON
+    PRODUCT_STOCK
+FOR EACH ROW
+BEGIN
+    UPDATE 
+        PRODUCT
+    SET 
+        STOCK_QUANT = STOCK_QUANT + :NEW.STOCK_COUNT
+    WHERE
+        PRODUCT_CODE = :NEW.PRODUCT_CODE;
+END;
+/
+
+INSERT INTO
+    PRODUCT_STOCK
+VALUES (
+    STOCK_SEQUENCE.NEXTVAL
+    , 200
+    , SYSDATE
+    , 20
+    , 2000000
+);
+    
+INSERT INTO
+    PRODUCT_STOCK
+VALUES (
+    STOCK_SEQUENCE.NEXTVAL
+    , 201
+    , SYSDATE
+    , 10
+    , 3000000
+);   
+
+CREATE TRIGGER
+    TRIGGER_SALE_PRODUCT
+AFTER INSERT ON
+    PRODUCT_SALE
+FOR EACH ROW
+BEGIN
+    UPDATE
+        PRODUCT
+    SET 
+        STOCK_QUANT = STOCK_QUANT - :NEW.SALE_COUNT
+    WHERE
+        PRODUCT_CODE = :NEW.PRODUCT_CODE;
+END;
+/
+
+INSERT INTO
+    PRODUCT_SALE
+VALUES (
+    SEQUENCE_SALE.NEXTVAL
+    , 200
+    , SYSDATE
+    , 30
+    , 3000000
+);
+COMMIT;
+
+CREATE OR REPLACE TRIGGER
+    TRIGGER_SALE_PRODUCT
+AFTER INSERT ON
+    PRODUCT_SALE
+FOR EACH ROW
+DECLARE 
+    COUNT_STOCK NUMBER := 0;
+BEGIN
+    SELECT 
+        STOCK_QUANT
+    INTO 
+        COUNT_STOCK
+    FROM
+        PRODUCT
+    WHERE
+        PRODUCT_CODE = :NEW.PRODUCT_CODE;
+    IF
+        COUNT_STOCK > :NEW.SALE_COUNT
+    THEN
+        UPDATE
+            PRODUCT
+        SET 
+            STOCK_QUANT = STOCK_QUANT - :NEW.SALE_COUNT
+        WHERE
+            PRODUCT_CODE = :NEW.PRODUCT_CODE;
+    ELSE
+        RAISE_APPLICATION_ERROR (-20000, '재고 수량 수량보다 판매 수량이 많습니다.');
+    END IF;
+END;
+/
+
+INSERT INTO
+    PRODUCT_SALE
+VALUES (
+    SEQUENCE_SALE.NEXTVAL
+    , 200
+    , SYSDATE
+    , 30
+    , 3000000
+);
+
+-- 사용자 함수 예외처리
+-- RAISE_APPLICATION_ERROR([에러코드 ,][에러메시지]}
+-- 에러코드 : - 20000 ~ - 20999 사이의 숫자
+
+CREATE TABLE
+    PRODUCT_STOCK_SALE (
+        STOCK_SALE_CODE NUMBER PRIMARY KEY
+        , PRODUCT_CODE NUMBER REFERENCES PRODUCT
+        , STOCK_SALE_DATE DATE
+        , CHANGE_QUANTITY NUMBER
+        , STATUS VARCHAR (20) CHECK (STATUS IN ('입고', '출고', '입고실패', '출고실패'))
+);
+
+
+
+CREATE SEQUENCE 
+    SEQUENCE_STOCK_SALE_CODE
+NOCACHE;
+
+
+
+CREATE OR REPLACE TRIGGER
+    TRIGGER_STOCK_SALE
+AFTER INSERT ON
+    PRODUCT_STOCK_SALE
+FOR EACH ROW
+DECLARE
+    QUANTITY NUMBER := 0;
+BEGIN
+    SELECT
+        STOCK_QUANT
+    INTO
+        QUANTITY
+    FROM
+        PRODUCT
+    WHERE
+        PRODUCT_CODE = :NEW.PRODUCT_CODE;
+    IF
+        :NEW.STATUS = '입고'
+    THEN
+        UPDATE
+            PRODUCT
+        SET
+            STOCK_QUANT = STOCK_QUANT + :NEW.CHANGE_QUANTITY
+        WHERE
+            PRODUCT_CODE = :NEW.PRODUCT_CODE;
+    ELSE
+        IF
+            QUANTITY >= :NEW.CHANGE_QUANTITY
+        THEN
+            UPDATE
+                PRODUCT
+            SET
+                STOCK_QUANT = STOCK_QUANT - :NEW.CHANGE_QUANTITY
+            WHERE
+                PRODUCT_CODE = :NEW.PRODUCT_CODE;
+        ELSE
+            RAISE_APPLICATION_ERROR (-20001, '재고 수량보다 판매 수량이 많습니다.');
+        END IF;
+    END IF;
+END;
+/
+
+INSERT INTO
+    PRODUCT_STOCK_SALE
+VALUES (
+    SEQUENCE_STOCK_SALE_CODE.NEXTVAL
+    , 200
+    , SYSDATE
+    , 20
+    , '입고'
+);
+INSERT INTO
+    PRODUCT_STOCK_SALE
+VALUES (
+    SEQUENCE_STOCK_SALE_CODE.NEXTVAL
+    , 200
+    , SYSDATE
+    , 40
+    , '출고'
+);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
